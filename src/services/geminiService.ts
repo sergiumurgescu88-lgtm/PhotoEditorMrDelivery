@@ -64,19 +64,33 @@ export const generateDishImage = async (
   locationBase64?: string | null,
   referenceBase64?: string | null
 ): Promise<string> => {
+  const referenceImages: string[] = [];
+  const refLegend: string[] = [];
+  if (logoBase64) {
+    referenceImages.push(logoBase64);
+    refLegend.push(`REFERENCE IMAGE #${referenceImages.length} = RESTAURANT LOGO. MICHELIN BRANDING PROTOCOL: place this exact logo, beautifully and tastefully, embroidered or printed in a single muted tone (charcoal/ivory) onto a crisp folded white linen napkin resting elegantly beside the dish. The napkin must look freshly pressed, with soft natural folds, subtle fabric texture and gentle shadow. The logo must keep its exact shape, proportions and letters — do not redraw, distort, mirror or invent text. Subtle, refined, fine-dining presentation. Never overlay the logo on the food itself.`);
+  }
+  if (locationBase64) {
+    referenceImages.push(locationBase64);
+    refLegend.push(`REFERENCE IMAGE #${referenceImages.length} = ENVIRONMENT/LOCATION. Use it as the background context, lighting mood and color palette inspiration.`);
+  }
+  if (referenceBase64) {
+    referenceImages.push(referenceBase64);
+    refLegend.push(`REFERENCE IMAGE #${referenceImages.length} = PLATING REFERENCE. Match this plating architecture exactly.`);
+  }
+
   const masterPrompt = `[MICHELIN PRODUCTION PROTOCOL] - ${dishName.toUpperCase()}
   MANDATE: Create a 100% photorealistic commercial asset.
   STYLE: ${style}
   CONTEXT: ${dishDescription}
-  ${logoBase64 ? "INTEGRATE LOGO: Follow subtle branding protocol." : ""}
-  ${locationBase64 ? "ENVIRONMENT: Use provided background context." : ""}
   COMPOSITION: Perfectly level horizon, 30% negative space, cinematic bokeh.
-  ${referenceBase64 ? "REFERENCE LOCK: Match this plating architecture exactly." : ""}`;
+  ${refLegend.join("\n  ")}`;
 
   const { imageUrl } = await callEdgeFunction("generate-image", {
     action: "generate",
     prompt: masterPrompt,
     aspectRatio,
+    referenceImages,
   });
 
   if (!imageUrl) throw new Error("API failed to return image data.");

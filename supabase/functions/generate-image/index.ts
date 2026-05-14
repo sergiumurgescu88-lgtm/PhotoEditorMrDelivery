@@ -140,7 +140,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { action, prompt, aspectRatio, imageBase64, editPrompt } = body;
+    const { action, prompt, aspectRatio, imageBase64, editPrompt, referenceImages } = body;
+    const refImages: string[] = Array.isArray(referenceImages)
+      ? (referenceImages as unknown[])
+          .filter((s) => typeof s === "string" && (s as string).length > 0 && (s as string).length < MAX_IMAGE_BASE64_LENGTH)
+          .slice(0, 4)
+          .map((s) => {
+            const str = s as string;
+            return str.startsWith("data:") ? str : `data:image/png;base64,${str}`;
+          })
+      : [];
 
     if (!action || typeof action !== "string" || !VALID_ACTIONS.includes(action as any)) {
       return new Response(
@@ -209,8 +218,19 @@ Deno.serve(async (req) => {
       return url;
     };
 
-    const tryGeminiGenerate = async (p: string): Promise<string> => {
-      return await callLovableGateway([{ role: "user", content: p }]);
+    const tryGeminiGenerate = async (p: string, refs: string[] = []): Promise<string> => {
+      if (refs.length === 0) {
+        return await callLovableGateway([{ role: "user", content: p }]);
+      }
+      return await callLovableGateway([
+        {
+          role: "user",
+          content: [
+            { type: "text", text: p },
+            ...refs.map((url) => ({ type: "image_url", image_url: { url } })),
+          ],
+        },
+      ]);
     };
 
     const tryGeminiEdit = async (p: string, b64: string, mt: string): Promise<string> => {
@@ -243,7 +263,7 @@ Deno.serve(async (req) => {
         const t0 = Date.now();
         console.log("[generate] trying Gemini (nano-banana)…");
         try {
-          imageUrl = await tryGeminiGenerate(sanitizePrompt(prompt));
+          imageUrl = await tryGeminiGenerate(sanitizePrompt(prompt), refImages);
           provider = "gemini";
           console.log(`[generate] ✅ Gemini success in ${Date.now() - t0}ms`);
         } catch (e) {
@@ -258,7 +278,7 @@ Deno.serve(async (req) => {
         const t0 = Date.now();
         console.log("[generate] trying kie.ai (nano-banana-pro) fallback…");
         try {
-          imageUrl = await kieGenerate(KIE_AI_API_KEY, sanitizePrompt(prompt), safeAspectRatio);
+          imageUrl = await kieGenerate(KIE_AI_API_KEY, sanitizePrompt(prompt), safeAspectRatio, refImages);
           provider = "kie.ai";
           console.log(`[generate] ✅ kie.ai success in ${Date.now() - t0}ms`);
         } catch (e) {
