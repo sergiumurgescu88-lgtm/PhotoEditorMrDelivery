@@ -3,6 +3,7 @@ import { MenuAnalysisResult } from '../types';
 import { parseMenuText } from '../services/geminiService';
 import { Sparkles, Loader2, Image as ImageIcon, MapPin, X, FileSpreadsheet, Camera, Images, Mic, MicOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import mammoth from 'mammoth';
 
 interface MenuParserProps {
   onDishesParsed: (dishes: MenuAnalysisResult['dishes'], referencePhoto?: string) => void;
@@ -199,35 +200,46 @@ const MenuParser: React.FC<MenuParserProps> = ({
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const lowerName = file.name.toLowerCase();
+    const isWord = lowerName.endsWith('.docx') || lowerName.endsWith('.doc') || file.type.includes('word');
+
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
       let newText = "";
 
-      jsonData.forEach((row) => {
-        const keys = Object.keys(row);
-        const nameKey = keys.find(k => k.toLowerCase().includes('denuire') || k.toLowerCase().includes('denumire') || k.toLowerCase().includes('preparat'));
-        const descKey = keys.find(k => k.toLowerCase().includes('descriere'));
+      if (isWord) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        const lines = result.value.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        newText = lines.join('\n');
+      } else {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data);
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
 
-        if (nameKey && row[nameKey]) {
-          const name = String(row[nameKey]).trim();
-          const desc = descKey ? String(row[descKey]).trim() : "";
-          if (name && !name.toLowerCase().includes('denuire preparat') && !name.toLowerCase().includes('denumire preparat')) {
-            newText += `${name}: ${desc}\n`;
+        jsonData.forEach((row) => {
+          const keys = Object.keys(row);
+          const nameKey = keys.find(k => k.toLowerCase().includes('denuire') || k.toLowerCase().includes('denumire') || k.toLowerCase().includes('preparat'));
+          const descKey = keys.find(k => k.toLowerCase().includes('descriere'));
+
+          if (nameKey && row[nameKey]) {
+            const name = String(row[nameKey]).trim();
+            const desc = descKey ? String(row[descKey]).trim() : "";
+            if (name && !name.toLowerCase().includes('denuire preparat') && !name.toLowerCase().includes('denumire preparat')) {
+              newText += `${name}: ${desc}\n`;
+            }
           }
-        }
-      });
+        });
 
-      if (!newText.trim()) {
-        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-        for (let i = 1; i < rawData.length; i++) {
-          const row = rawData[i];
-          if (row && row.length >= 2) {
-            const filtered = row.filter((val: any) => val !== undefined && val !== null && val !== "");
-            if (filtered.length >= 2) {
-              newText += `${filtered[0]}: ${filtered[1]}\n`;
+        if (!newText.trim()) {
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+          for (let i = 1; i < rawData.length; i++) {
+            const row = rawData[i];
+            if (row && row.length >= 2) {
+              const filtered = row.filter((val: any) => val !== undefined && val !== null && val !== "");
+              if (filtered.length >= 2) {
+                newText += `${filtered[0]}: ${filtered[1]}\n`;
+              }
             }
           }
         }
@@ -236,11 +248,11 @@ const MenuParser: React.FC<MenuParserProps> = ({
       if (newText.trim()) {
         setText(prev => (prev.trim() ? prev + '\n' + newText : newText));
       } else {
-        alert("No valid menu data found in the spreadsheet.");
+        alert("No valid menu data found in the file.");
       }
     } catch (error) {
-      console.error("Excel import error:", error);
-      alert("Failed to read Excel file. Please check the file format.");
+      console.error("Import error:", error);
+      alert("Failed to read file. Please check the file format.");
     }
     e.target.value = '';
   };
@@ -249,7 +261,7 @@ const MenuParser: React.FC<MenuParserProps> = ({
     <div className="w-full max-w-2xl mx-auto bg-zinc-900/40 border border-zinc-800/60 rounded-[2.5rem] p-4 shadow-2xl backdrop-blur-md">
       <input type="file" ref={logoInputRef} onChange={(e) => handleFileChange(e, onLogoChange)} accept="image/*" className="hidden" />
       <input type="file" ref={locationInputRef} onChange={(e) => handleFileChange(e, onLocationChange)} accept="image/*" className="hidden" />
-      <input type="file" ref={excelInputRef} onChange={handleExcelUpload} accept=".xlsx, .xls, .csv" className="hidden" />
+      <input type="file" ref={excelInputRef} onChange={handleExcelUpload} accept=".xlsx,.xls,.csv,.docx,.doc" className="hidden" />
       <input type="file" ref={photoInputRef} onChange={handlePhotoReferenceUpload} accept="image/*" className="hidden" />
       <input type="file" ref={cameraInputRef} onChange={handlePhotoReferenceUpload} accept="image/*" capture="environment" className="hidden" />
       <input type="file" ref={bulkInputRef} onChange={handleBulkUpload} accept="image/*" multiple className="hidden" />
@@ -355,7 +367,7 @@ const MenuParser: React.FC<MenuParserProps> = ({
             onClick={() => excelInputRef.current?.click()}
             className="flex-1 flex items-center justify-center gap-3 py-4 px-6 bg-zinc-800/40 hover:bg-zinc-800/60 border border-zinc-700/50 text-zinc-400 text-xs font-black uppercase tracking-widest rounded-2xl transition-all"
           >
-            <FileSpreadsheet size={16} /> Import Excel
+            <FileSpreadsheet size={16} /> Import Excel / Word
           </button>
 
           <button
