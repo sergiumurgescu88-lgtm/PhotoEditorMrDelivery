@@ -263,7 +263,7 @@ Deno.serve(async (req) => {
         const t0 = Date.now();
         console.log("[generate] trying Gemini (nano-banana)…");
         try {
-          imageUrl = await tryGeminiGenerate(sanitizePrompt(prompt));
+          imageUrl = await tryGeminiGenerate(sanitizePrompt(prompt), refImages);
           provider = "gemini";
           console.log(`[generate] ✅ Gemini success in ${Date.now() - t0}ms`);
         } catch (e) {
@@ -278,7 +278,7 @@ Deno.serve(async (req) => {
         const t0 = Date.now();
         console.log("[generate] trying kie.ai (nano-banana-pro) fallback…");
         try {
-          imageUrl = await kieGenerate(KIE_AI_API_KEY, sanitizePrompt(prompt), safeAspectRatio);
+          imageUrl = await kieGenerate(KIE_AI_API_KEY, sanitizePrompt(prompt), safeAspectRatio, refImages);
           provider = "kie.ai";
           console.log(`[generate] ✅ kie.ai success in ${Date.now() - t0}ms`);
         } catch (e) {
