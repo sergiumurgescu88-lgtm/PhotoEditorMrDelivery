@@ -218,7 +218,7 @@ Deno.serve(async (req) => {
       let kieError: string | null = null;
       let provider: string | null = null;
 
-      if (GEMINI_API_KEY) {
+      if (LOVABLE_API_KEY) {
         const t0 = Date.now();
         console.log("[generate] trying Gemini (nano-banana)…");
         try {
@@ -230,7 +230,7 @@ Deno.serve(async (req) => {
           console.warn(`[generate] ❌ Gemini failed in ${Date.now() - t0}ms: ${geminiError}`);
         }
       } else {
-        geminiError = "GEMINI_API_KEY not configured";
+        geminiError = "LOVABLE_API_KEY not configured";
       }
 
       if (!imageUrl && KIE_AI_API_KEY) {
@@ -287,7 +287,7 @@ Deno.serve(async (req) => {
       let kieError: string | null = null;
       let provider: string | null = null;
 
-      if (GEMINI_API_KEY) {
+      if (LOVABLE_API_KEY) {
         const t0 = Date.now();
         console.log("[edit] trying Gemini (nano-banana)…");
         try {
@@ -299,7 +299,7 @@ Deno.serve(async (req) => {
           console.warn(`[edit] ❌ Gemini failed in ${Date.now() - t0}ms: ${geminiError}`);
         }
       } else {
-        geminiError = "GEMINI_API_KEY not configured";
+        geminiError = "LOVABLE_API_KEY not configured";
       }
 
       if (!imageUrl && KIE_AI_API_KEY) {
