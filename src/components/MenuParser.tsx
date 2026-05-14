@@ -124,9 +124,13 @@ const MenuParser: React.FC<MenuParserProps> = ({
     setIsAnalyzing(true);
     try {
       const result = await parseMenuText(text);
+      if (!result.dishes?.length) {
+        throw new Error("No menu items found. Use one item per line, for example: Dish name: description.");
+      }
       onDishesParsed(result.dishes);
     } catch (error) {
-      alert("Could not parse menu. Please try again.");
+      const message = error instanceof Error ? error.message : "Could not parse menu. Please try again.";
+      alert(message);
     } finally {
       setIsAnalyzing(false);
     }
