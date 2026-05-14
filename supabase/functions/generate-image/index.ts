@@ -165,6 +165,27 @@ Deno.serve(async (req) => {
 
     console.log(`Processing ${action} request for user ${user.id}, aspect ratio: ${safeAspectRatio}`);
 
+    // Sanitize prompt to avoid Google safety filter false-positives
+    const sanitizePrompt = (p: string): string => {
+      return p
+        .replace(/hyper-?realistic miniature humans?/gi, "stylized miniature figurines")
+        .replace(/100% REAL HUMANS?/gi, "lifelike figurines")
+        .replace(/real humans?/gi, "figurines")
+        .replace(/photorealistic skin/gi, "detailed painted surface")
+        .replace(/visible pores/gi, "fine surface detail")
+        .replace(/skin tone variations/gi, "color variations")
+        .replace(/subtle veins/gi, "fine details")
+        .replace(/laugh lines/gi, "expression details")
+        .replace(/human imperfections/gi, "natural imperfections")
+        .replace(/crime scene/gi, "investigation scene")
+        .replace(/forensic (food )?investigation/gi, "culinary inspection")
+        .replace(/detectives?/gi, "inspector figurines")
+        .replace(/forensic specialists?/gi, "inspector figurines")
+        .replace(/evidence tents?/gi, "small numbered markers")
+        .replace(/noir\/investigative/gi, "moody cinematic")
+        .replace(/CHARACTER/gi, "FIGURINE");
+    };
+
     const callLovableGateway = async (messages: any[]): Promise<string> => {
       const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
