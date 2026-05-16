@@ -1,0 +1,171 @@
+// mrdelivery-proxy/index.ts — Hono + Kie.ai + PocketBase
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { serve } from '@hono/node-server';
+
+const app = new Hono();
+app.use('*', cors());
+
+const KIE_KEY = process.env.KIE_AI_KEY || '';
+const CALLBACK_URL = "https://mrdelivery.shop/api/callback";
+
+// Health check
+app.get('/health', (c) => c.json({ status: 'ok', provider: 'kie.ai' }));
+
+// Callback endpoint for Kie.ai webhook
+app.post('/callback', async (c) => {
+  try {
+    const data = await c.req.json();
+    const taskId = data.data?.taskId;
+    if (!taskId) return c.json({ error: 'No taskId' }, 400);
+    // Store result in memory cache (simplified)
+    (global as any).kieResults = (global as any).kieResults || {};
+    (global as any).kieResults[taskId] = { 
+      status: data.data?.state || 'pending',
+      imageUrl: data.data?.resultJson ? JSON.parse(data.data.resultJson).resultUrls?.[0] : null
+    };
+    return c.json({ received: true, taskId });
+  } catch (e) {
+    console.error('[CALLBACK]', e);
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+// Status endpoint for async tasks
+app.get('/status/:taskId', (c) => {
+  const taskId = c.req.param('taskId');
+  const results = (global as any).kieResults || {};
+  const result = results[taskId];
+  if (!result) return c.json({ error: 'Task not found' }, 404);
+  return c.json({ taskId, status: result.status, imageUrl: result.imageUrl });
+});
+
+// Generate endpoint — main image generation
+app.post('/generate', async (c) => {
+  try {
+    const { prompt, dishName, style } = await c.req.json();
+    if (!prompt) return c.json({ error: 'Missing prompt' }, 400);
+    
+    // Call Kie.ai with callback pattern
+    const input = JSON.stringify({
+      prompt: prompt,
+      aspect_ratio: "16:9",
+      resolution: "1K",
+      output_format: "png"
+    });
+    
+    const r = await fetch("https://api.kie.ai/v1/playground/task", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${KIE_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        input: input,
+        callBackUrl: CALLBACK_URL,
+        model: "nano-banana-2"
+      })
+    });
+    
+    if (!r.ok) throw new Error(`Kie.ai HTTP ${r.status}`);
+    const d = await r.json();
+    const taskId = d.data?.taskId;
+    
+    // Poll for result (simplified sync wait, max 90s)
+    for (let i = 0; i < 90; i++) {
+      await new Promise(res => setTimeout(res, 1000));
+      const results = (global as any).kieResults || {};
+      if (results[taskId]?.imageUrl) {
+        return c.json({ imageUrl: results[taskId].imageUrl, provider: "kie.ai" });
+      }
+    }
+    
+    return c.json({ error: "Kie.ai timeout" }, 504);
+  } catch (e) {
+    console.error('[GENERATE]', e);
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+// Magic Edit endpoint — image editing via text prompt
+app.post('/edit', async (c) => {
+  try {
+    const { imageUrl, editPrompt } = await c.req.json();
+    if (!imageUrl || !editPrompt) return c.json({ error: "Missing params" }, 400);
+    
+    const input = JSON.stringify({
+      prompt: editPrompt,
+      image_input: [imageUrl],
+      aspect_ratio: "16:9",
+      resolution: "1K",
+      output_format: "png"
+    });
+    
+    const r = await fetch("https://api.kie.ai/v1/playground/task", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${KIE_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        input: input,
+        callBackUrl: CALLBACK_URL,
+        model: "nano-banana-2"
+      })
+    });
+    
+    if (!r.ok) throw new Error(`Kie.ai HTTP ${r.status}`);
+    const d = await r.json();
+    return c.json({ taskId: d.data?.taskId, provider: "kie.ai" });
+  } catch (e) {
+    console.error('[EDIT]', e);
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+// Add Logo endpoint — integrate logo naturally in scene
+app.post('/logo', async (c) => {
+  try {
+    const { imageUrl, logoUrl, placement } = await c.req.json();
+    if (!imageUrl || !logoUrl) return c.json({ error: "Missing params" }, 400);
+    
+    const pos = placement || "napkin";
+    const prompt = `Place the restaurant logo naturally on a ${pos} in the scene, realistic material texture, correct perspective and lighting, photorealistic food photography`;
+    
+    const input = JSON.stringify({
+      prompt: prompt,
+      image_input: [imageUrl, logoUrl],
+      aspect_ratio: "16:9",
+      resolution: "1K",
+      output_format: "png"
+    });
+    
+    const r = await fetch("https://api.kie.ai/v1/playground/task", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${KIE_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        input: input,
+        callBackUrl: CALLBACK_URL,
+        model: "nano-banana-2"
+      })
+    });
+    
+    if (!r.ok) throw new Error(`Kie.ai HTTP ${r.status}`);
+    const d = await r.json();
+    return c.json({ taskId: d.data?.taskId, provider: "kie.ai" });
+  } catch (e) {
+    console.error('[LOGO]', e);
+    return c.json({ error: String(e) }, 500);
+  }
+});
+
+// Catch-all for undefined routes
+app.notFound((c) => c.json({ error: "Endpoint not found", available: ["/health", "/callback", "/status/:taskId", "/generate", "/edit", "/logo"] }, 404));
+
+// Start server
+const PORT = parseInt(process.env.PORT || "4900");
+console.log(`🚀 MrDelivery Proxy running on port ${PORT}`);
+serve({ fetch: app.fetch, port: PORT });
