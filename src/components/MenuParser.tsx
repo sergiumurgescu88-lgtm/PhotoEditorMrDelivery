@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MenuAnalysisResult } from '../types';
-import { parseMenuText } from '../services/geminiService';
 import { Sparkles, Loader2, Image as ImageIcon, MapPin, X, FileSpreadsheet, Camera, Images, Mic, MicOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
@@ -123,11 +122,23 @@ const MenuParser: React.FC<MenuParserProps> = ({
     if (!text.trim()) return;
     setIsAnalyzing(true);
     try {
-      const result = await parseMenuText(text);
-      if (!result.dishes?.length) {
-        throw new Error("No menu items found. Use one item per line, for example: Dish name: description.");
+      // Parsare locala - fara API extern
+      const lines = text.trim().split(/\n+/).map(l => l.trim()).filter(l => l.length > 2);
+      const dishes = lines.map(line => {
+        const colonIdx = line.indexOf(':');
+        if (colonIdx > 0) {
+          return {
+            name: line.substring(0, colonIdx).trim(),
+            description: line.substring(colonIdx + 1).trim() || "Preparat de restaurant"
+          };
+        }
+        return { name: line.trim(), description: "Preparat de restaurant" };
+      }).filter(d => d.name.length > 0);
+
+      if (!dishes.length) {
+        throw new Error("No menu items found. Use one item per line, e.g.: Pizza Margherita: Mozzarella, rosii, busuioc");
       }
-      onDishesParsed(result.dishes);
+      onDishesParsed(dishes);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not parse menu. Please try again.";
       alert(message);

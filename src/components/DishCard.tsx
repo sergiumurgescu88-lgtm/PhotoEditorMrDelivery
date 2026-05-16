@@ -158,7 +158,7 @@ const DishCard: React.FC<DishCardProps> = ({ dish, userCredits, currentStyle, cu
     setPendingAction(null);
     onUpdate(dish.id, { isLoading: true, error: undefined });
     try {
-      let finalDescription = dish.description;
+      let finalDescription = dish.description || '';
       if (dish.magicLogoPrompt) finalDescription += `. ${dish.magicLogoPrompt}`;
       if (dish.magicLocationPrompt) finalDescription += `. ${dish.magicLocationPrompt}`;
 
@@ -183,8 +183,8 @@ const DishCard: React.FC<DishCardProps> = ({ dish, userCredits, currentStyle, cu
 
   const executeEdit = async (customPrompt?: string) => {
     setPendingAction(null);
-    const promptToUse = customPrompt || editPrompt;
-    if (!dish.imageUrl || !promptToUse.trim()) return;
+    const promptToUse = customPrompt || editPrompt || '';
+    if (!dish.imageUrl || !promptToUse.trim()) { addToast('error', 'Missing Prompt', 'Please enter a description for the edit.'); return; }
 
     onUpdate(dish.id, { isEditing: true });
     try {

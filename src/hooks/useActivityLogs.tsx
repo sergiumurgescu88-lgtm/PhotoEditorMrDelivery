@@ -1,46 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from './useAuth';
+import { useState, useEffect } from 'react';
+import { pb } from '../lib/pocketbase';
 
-export interface ActivityLog {
-  id: string;
-  user_id: string;
-  user_name: string;
-  action: string;
-  details: string;
-  credits_affected: number;
-  created_at: string;
-}
-
-export const useActivityLogs = (adminMode = false) => {
-  const { user, isAdmin } = useAuth();
-  const [logs, setLogs] = useState<ActivityLog[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const fetchLogs = useCallback(async () => {
-    if (!user) return;
-    setIsLoading(true);
-
-    let query = supabase
-      .from('activity_logs')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(200);
-
-    if (!adminMode || !isAdmin) {
-      query = query.eq('user_id', user.id);
-    }
-
-    const { data, error } = await query;
-    if (!error && data) {
-      setLogs(data as ActivityLog[]);
-    }
-    setIsLoading(false);
-  }, [user, adminMode, isAdmin]);
+export function useActivityLogs() {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    pb.collection('activity_logs').getList(1, 100, { sort: '-created' }).then(r => { setLogs(r.items); setLoading(false); });
+  }, []);
 
-  return { logs, isLoading, refreshLogs: fetchLogs };
-};
+  return { logs, loading };
+}

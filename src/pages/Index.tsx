@@ -64,7 +64,7 @@ const Index: React.FC = () => {
   };
 
   const handleDishesParsed = (parsedDishes: { name: string; description: string; referencePhoto?: string }[], referencePhoto?: string) => {
-    if (!profile) { setShowAuth(true); return; }
+    // AUTH REMOVED: oricine poate genera
     const newDishes = parsedDishes.map((d) => ({ ...d, id: Math.random().toString(36).substr(2, 9), referencePhoto: referencePhoto || d.referencePhoto, isLoading: false, isEditing: false, isAnalyzing: false }));
     setDishes((prev) => [...prev, ...newDishes]); setStep(2);
   };

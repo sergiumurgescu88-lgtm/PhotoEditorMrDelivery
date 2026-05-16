@@ -1,13 +1,9 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { lovable } from '@/integrations/lovable';
-
-import type { Session, User as SupabaseUser } from '@supabase/supabase-js';
+import { pb } from '@/lib/pocketbase';
 
 export interface Profile {
   id: string;
   user_id: string;
-  email: string;
   full_name: string;
   profile_photo: string | null;
   credits: number;
@@ -21,15 +17,20 @@ export interface Profile {
   is_email_verified: boolean;
   total_generations: number;
   last_login: string | null;
-  created_at: string;
-  updated_at: string;
+  created: string;
+  updated: string;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
 }
 
 export interface AuthContextType {
-  session: Session | null;
-  user: SupabaseUser | null;
+  user: AuthUser | null;
   profile: Profile | null;
-  roles: string[];
   isLoading: boolean;
   isAdmin: boolean;
   signInWithGoogle: () => Promise<void>;
@@ -41,114 +42,96 @@ export interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [roles, setRoles] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchProfile = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-
-    if (!error && data) {
-      setProfile(data as Profile);
+    try {
+      const records = await pb.collection('profiles').getList(1, 1, {
+        filter: `user_id = "${userId}"`,
+      });
+      if (records.items.length > 0) {
+        setProfile(records.items[0] as unknown as Profile);
+      } else {
+        // Crează profil nou cu 50 credite gratuite
+        const newProfile = await pb.collection('profiles').create({
+          user_id: userId,
+          credits: 50,
+          free_credits: 50,
+          purchased_credits: 0,
+          daily_usage: 0,
+          account_tier: 'FREE',
+          account_status: 'ACTIVE',
+          total_generations: 0,
+          preferred_currency: 'USD',
+          is_email_verified: true,
+        });
+        setProfile(newProfile as unknown as Profile);
+      }
+    } catch (e) {
+      console.error('fetchProfile error:', e);
     }
   }, []);
 
-  const fetchRoles = useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId);
-
-    if (!error && data) {
-      setRoles(data.map(r => r.role));
+  const syncUser = useCallback(() => {
+    const model = pb.authStore.model;
+    if (pb.authStore.isValid && model) {
+      setUser({
+        id: model.id,
+        email: model.email,
+        name: model.name,
+        avatarUrl: model.avatarUrl,
+      });
+      fetchProfile(model.id).finally(() => setIsLoading(false));
+    } else {
+      setUser(null);
+      setProfile(null);
+      setIsLoading(false);
     }
-  }, []);
-
-  const refreshProfile = useCallback(async () => {
-    if (user?.id) {
-      await Promise.all([fetchProfile(user.id), fetchRoles(user.id)]);
-    }
-  }, [user?.id, fetchProfile, fetchRoles]);
+  }, [fetchProfile]);
 
   useEffect(() => {
-    // Set up auth state listener BEFORE getting session
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, newSession) => {
-        setSession(newSession);
-        setUser(newSession?.user ?? null);
-
-        if (newSession?.user) {
-          // Use setTimeout to avoid potential deadlocks with Supabase
-          setTimeout(async () => {
-            await Promise.all([
-              fetchProfile(newSession.user.id),
-              fetchRoles(newSession.user.id),
-            ]);
-            setIsLoading(false);
-          }, 0);
-        } else {
-          setProfile(null);
-          setRoles([]);
-          setIsLoading(false);
-        }
-      }
-    );
-
-    // Then get initial session
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      setUser(initialSession?.user ?? null);
-      if (initialSession?.user) {
-        Promise.all([
-          fetchProfile(initialSession.user.id),
-          fetchRoles(initialSession.user.id),
-        ]).then(() => setIsLoading(false));
-      } else {
-        setIsLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [fetchProfile, fetchRoles]);
+    syncUser();
+    const unsub = pb.authStore.onChange(() => syncUser());
+    return () => unsub();
+  }, [syncUser]);
 
   const signInWithGoogle = async () => {
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
-    });
-    if (result.error) {
-      throw result.error;
-    }
+    const res = await fetch('/pb/api/collections/users/auth-methods');
+    const data = await res.json();
+    const providers: any[] = data.authProviders ?? [];
+    const googleProvider = providers.find((p: any) => p.name === 'google');
+    if (!googleProvider) throw new Error('Google OAuth nu e configurat in PocketBase');
+
+    localStorage.setItem('pb_google_verifier', googleProvider.codeVerifier);
+    localStorage.setItem('pb_google_state', googleProvider.state);
+
+    const redirectUrl = window.location.origin + '/pb-callback';
+    window.location.href = googleProvider.authUrl + encodeURIComponent(redirectUrl);
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    pb.authStore.clear();
+    setUser(null);
     setProfile(null);
-    setRoles([]);
   };
+
+  const refreshProfile = useCallback(async () => {
+    if (user?.id) await fetchProfile(user.id);
+  }, [user?.id, fetchProfile]);
 
   const updateProfile = async (updates: Partial<Profile>) => {
-    if (!user?.id) return;
-    const { error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('user_id', user.id);
-
-    if (!error) {
-      setProfile(prev => prev ? { ...prev, ...updates } : null);
-    }
+    if (!profile?.id) return;
+    const updated = await pb.collection('profiles').update(profile.id, updates);
+    setProfile(updated as unknown as Profile);
   };
 
-  const isAdmin = roles.includes('admin');
+  const isAdmin = false;
 
   return (
     <AuthContext.Provider value={{
-      session, user, profile, roles, isLoading, isAdmin,
+      user, profile, isLoading, isAdmin,
       signInWithGoogle, signOut, refreshProfile, updateProfile,
     }}>
       {children}
